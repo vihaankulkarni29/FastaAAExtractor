@@ -30,9 +30,11 @@
 
 ### Example (TSV format):
 
-Gene Start End Strand
-acrA 12345 12950 +
-acrB 56700 58950 -
+| Gene | Start | End | Strand |
+|------|-------|-----|--------|
+| acrA | 12345 | 12950 | + |
+| acrB | 56700 | 58950 | - |
+
 
 ## 🚀 How to Use (in Google Colab)
 
