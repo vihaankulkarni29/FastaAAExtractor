@@ -30,3 +30,24 @@
 
 ### Example (TSV format):
 
+Gene Start End Strand
+acrA 12345 12950 +
+acrB 56700 58950 -
+
+## 🚀 How to Use (in Google Colab)
+
+1. Open the notebook: [👉 Launch in Colab](#) *(insert link)*
+2. Upload your FASTA and coordinate file when prompted
+3. Enter your isolate name (e.g., `ECS34`)
+4. Automatically download a ZIP of extracted `.faa` files
+
+---
+
+## 📦 Installation (Local Testing)
+
+For users running this outside Colab:
+
+```bash
+git clone https://github.com/yourusername/FastAAExtractor.git
+cd FastAAExtractor
+pip install -r requirements.txt
