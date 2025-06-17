@@ -1,27 +1,32 @@
-# FastaAAExtractor
+# 🧬 FastAAExtractor 2.0
 
-# 🧬 FastAAExtractor 
-
-FastAAExtractor is a Google Colab-based tool for extracting amino acid sequences from bacterial genomes using only a FASTA file and a flexible coordinate table.
-
-### 🧪 Features:
-- Accepts `.fasta` + `.tsv`, `.tab`, `.csv`, or `.xlsx` as input
-- Robust column detection (`Gene`, `Start`, `End`, `Strand`)
-- Handles column name variations like "ARO Term" or "Coordinates"
-- Output `.faa` sequences saved in a zipped folder for download
-
-### 🔧 How to Use:
-1. Upload your genome FASTA file and coordinate file
-2. Enter your isolate name
-3. Download the zipped folder of protein sequences
-
-### 💡 Example Coordinate File
-
-| Gene | Start | End | Strand |
-|------|-------|-----|--------|
-| acrA | 12345 | 12950 | + |
-| acrB | 56700 | 58950 | - |
+**FastAAExtractor** is a lightweight, Google Colab–ready tool that extracts amino acid sequences from bacterial genomes using only a FASTA file and a coordinate table.
 
 ---
 
-Built and tested in **Google Colab** for ease of use and reproducibility.
+## 🧪 Key Features
+
+- 🧬 Accepts genome in FASTA format
+- 📄 Accepts gene coordinates from `.tsv`, `.tab`, `.csv`, or `.xlsx` files
+- 🧠 Automatically detects flexible column names (`Gene`, `ARO Term`, `Coordinates`, etc.)
+- 🔁 Handles multiple entries of the same gene (with suffixing)
+- 💾 Outputs amino acid sequences in `.faa` format, zipped for download
+
+---
+
+## 📂 Input Requirements
+
+### 1. Genome File
+- Format: `.fasta` or `.fa`
+- Must contain full genome or contig sequences
+
+### 2. Coordinate File (any of the following):
+- `.tsv`, `.tab`, `.csv`, or `.xlsx`
+- Required columns (case-insensitive, flexible matching):
+  - `Gene` → Gene name or product/ARO term
+  - `Start` → Start coordinate
+  - `End` → End coordinate
+  - `Strand` → `+` or `-`
+
+### Example (TSV format):
+
