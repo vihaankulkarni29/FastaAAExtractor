@@ -6,7 +6,7 @@ import logging
 import sys
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from .core import run_extraction, validate_inputs, run_parallel_extraction
 
@@ -17,6 +17,29 @@ EXIT_GENERAL_ERROR = 1
 EXIT_FILE_NOT_FOUND = 2
 EXIT_INVALID_INPUT = 3
 EXIT_NO_PROTEINS_EXTRACTED = 4
+
+
+def parse_gene_list(genes_arg: str) -> List[str]:
+    """
+    Parse gene list from command-line argument.
+    
+    Args:
+        genes_arg: Either comma-separated genes or @file.txt
+        
+    Returns:
+        List of gene names
+    """
+    if genes_arg.startswith("@"):
+        list_path = Path(genes_arg[1:])
+        if not list_path.exists():
+            raise FileNotFoundError(f"Gene list file not found: {list_path}")
+        return [
+            line.strip()
+            for line in list_path.read_text().splitlines()
+            if line.strip()
+        ]
+    else:
+        return [g.strip() for g in genes_arg.split(",") if g.strip()]
 
 
 def setup_logging(verbose: bool = False, quiet: bool = False, log_file: Optional[str] = None):
@@ -173,18 +196,11 @@ def main():
         # Parse genes filter
         gene_filter = None
         if args.genes:
-            if args.genes.startswith("@"):
-                list_path = Path(args.genes[1:])
-                if not list_path.exists():
-                    logging.error(f"Gene list file not found: {list_path}")
-                    return EXIT_FILE_NOT_FOUND
-                gene_filter = [
-                    line.strip()
-                    for line in list_path.read_text().splitlines()
-                    if line.strip()
-                ]
-            else:
-                gene_filter = [g.strip() for g in args.genes.split(",") if g.strip()]
+            try:
+                gene_filter = parse_gene_list(args.genes)
+            except FileNotFoundError as e:
+                logging.error(str(e))
+                return EXIT_FILE_NOT_FOUND
 
         # Parallel mode: only works with --genes and single genome currently
         if args.parallel and gene_filter:
@@ -324,6 +340,53 @@ def run_batch(args) -> int:
         logging.error(f"Batch file missing columns: {', '.join(sorted(missing))}")
         return EXIT_INVALID_INPUT
 
+    # Check if parallel mode with gene list
+    if args.parallel and args.genes:
+        gene_list = parse_gene_list(args.genes)
+        if not gene_list:
+            logging.error("No genes specified for parallel batch extraction")
+            return EXIT_INVALID_INPUT
+            
+        if not args.quiet:
+            print(f"Running batch parallel extraction: {len(df)} genomes × {len(gene_list)} genes")
+            print(f"Using {args.max_workers} workers")
+        
+        # Prepare batch data
+        batch_data = []
+        for _, row in df.iterrows():
+            genome = row[[c for c in df.columns if c.lower() == "genome"][0]]
+            coords = row[[c for c in df.columns if c.lower() == "coords"][0]]
+            isolate = row[[c for c in df.columns if c.lower() == "isolate"][0]]
+            batch_data.append((str(genome), str(coords), str(isolate)))
+        
+        # Run parallel extraction
+        from fasta_aa_extractor.core import run_batch_parallel_extraction
+        
+        stats = run_batch_parallel_extraction(
+            batch_data=batch_data,
+            gene_list=gene_list,
+            output_dir=args.output_dir,
+            max_workers=args.max_workers,
+            show_progress=args.progress,
+        )
+        
+        # Report results
+        if not args.quiet:
+            print(f"\nBatch complete:")
+            print(f"  Genomes processed: {stats['genomes_processed']}")
+            print(f"  Successful: {stats['successes']}")
+            print(f"  Failed: {stats['failures']}")
+            print(f"  Total proteins extracted: {stats['total_extracted']}")
+            print(f"  Output files: {len(stats['output_files'])}")
+        
+        # Save JSON if requested
+        if args.json_output:
+            with open(args.json_output, "w") as f:
+                json.dump(stats, f, indent=2)
+        
+        return EXIT_SUCCESS if stats['failures'] == 0 else EXIT_GENERAL_ERROR
+
+    # Original sequential batch mode (for non-parallel or no gene list)
     successes = 0
     failures = 0
     details = []

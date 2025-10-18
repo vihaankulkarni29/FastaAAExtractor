@@ -4,7 +4,7 @@ import os
 import shutil
 import zipfile
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -552,3 +552,187 @@ def run_parallel_extraction(
         "genomes_processed": len(genome_files),
         "gene_stats": gene_stats,
     }
+
+
+def extract_genes_from_single_genome(
+    genome_file: str,
+    coord_file: str,
+    isolate_name: str,
+    gene_list: List[str],
+    output_dir: str,
+) -> Tuple[str, int, List[str]]:
+    """
+    Extract multiple genes from a single genome, creating per-genome FAA files.
+    
+    Worker function for batch parallel processing. Creates one FAA file per gene
+    per genome (e.g., isolate1_acrA.faa, isolate1_acrB.faa).
+    
+    Args:
+        genome_file: Path to genome FASTA
+        coord_file: Path to coordinate file
+        isolate_name: Name of the isolate/genome
+        gene_list: List of gene names to extract
+        output_dir: Output directory
+        
+    Returns:
+        Tuple of (isolate_name, total_extracted_count, list_of_output_files)
+    """
+    try:
+        # Load genome using lazy loading
+        genome_idx = SeqIO.index(genome_file, "fasta")
+        coords_df = load_coordinates(coord_file)
+        
+        # Normalize column names
+        coords_df = normalize_columns(coords_df)
+        actual_cols = detect_required_columns(coords_df)
+        
+        # Get the actual contig column name (might be "sequence" or "contig")
+        contig_col = actual_cols.get("sequence", "sequence")
+        
+        extracted_count = 0
+        output_files = []
+        
+        # Filter to requested genes
+        gene_col = actual_cols["gene"]
+        coords_df = coords_df[coords_df[gene_col].isin(gene_list)]
+        
+        # Group by gene and extract
+        for gene_name in gene_list:
+            gene_coords = coords_df[coords_df[gene_col] == gene_name]
+            
+            if gene_coords.empty:
+                continue
+                
+            records = []
+            for _, row in gene_coords.iterrows():
+                contig = row[contig_col]
+                start = int(row[actual_cols["start"]])
+                end = int(row[actual_cols["end"]])
+                strand = str(row[actual_cols["strand"]])
+                
+                if contig not in genome_idx:
+                    continue
+                    
+                seq_record = genome_idx[contig]
+                if seq_record is None or not hasattr(seq_record, "seq"):
+                    continue
+                
+                # Extract sequence (1-indexed to 0-indexed)
+                if strand == "+":
+                    protein_seq = seq_record.seq[start - 1 : end]
+                else:
+                    protein_seq = seq_record.seq[start - 1 : end].reverse_complement()
+                    
+                # Create record
+                record = SeqRecord(
+                    Seq(str(protein_seq)),
+                    id=f"{isolate_name}_{gene_name}",
+                    description=f"{contig}:{start}-{end}({strand}) length={len(protein_seq)}aa",
+                )
+                records.append(record)
+            
+            # Write per-genome, per-gene FAA file
+            if records:
+                output_file = os.path.join(output_dir, f"{isolate_name}_{gene_name}.faa")
+                SeqIO.write(records, output_file, "fasta")
+                output_files.append(output_file)
+                extracted_count += len(records)
+        
+        genome_idx.close()
+        return (isolate_name, extracted_count, output_files)
+        
+    except Exception as e:
+        logging.error(f"Error extracting from {isolate_name}: {e}")
+        return (isolate_name, 0, [])
+
+
+def run_batch_parallel_extraction(
+    batch_data: List[Tuple[str, str, str]],
+    gene_list: List[str],
+    output_dir: str,
+    max_workers: int = 4,
+    show_progress: bool = True,
+) -> Dict[str, Any]:
+    """
+    Run parallel extraction across multiple genomes with genome-centric outputs.
+    
+    Creates per-genome FAA files: genome1_geneA.faa, genome1_geneB.faa, etc.
+    
+    Args:
+        batch_data: List of (genome_file, coord_file, isolate_name) tuples
+        gene_list: List of gene names to extract
+        output_dir: Output directory
+        max_workers: Number of parallel workers
+        show_progress: Show progress bar
+        
+    Returns:
+        Dictionary with extraction statistics
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    total_extracted = 0
+    successes = 0
+    failures = 0
+    all_output_files = []
+    details = []
+    
+    # Use ProcessPoolExecutor to parallelize across genomes
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all jobs
+        futures = {
+            executor.submit(
+                extract_genes_from_single_genome,
+                genome_file,
+                coord_file,
+                isolate_name,
+                gene_list,
+                output_dir,
+            ): (genome_file, coord_file, isolate_name)
+            for genome_file, coord_file, isolate_name in batch_data
+        }
+        
+        # Process results with progress bar
+        iterator = as_completed(futures)
+        if show_progress and tqdm:
+            iterator = tqdm(iterator, total=len(futures), desc="Extracting genomes")
+            
+        for future in iterator:
+            genome_file, coord_file, isolate_name = futures[future]
+            try:
+                isolate, count, files = future.result()
+                if count > 0:
+                    successes += 1
+                    total_extracted += count
+                    all_output_files.extend(files)
+                    details.append({
+                        "isolate": isolate,
+                        "status": "success",
+                        "proteins_extracted": count,
+                        "output_files": files,
+                    })
+                else:
+                    failures += 1
+                    details.append({
+                        "isolate": isolate,
+                        "status": "warning",
+                        "proteins_extracted": 0,
+                        "error": "No proteins extracted",
+                    })
+            except Exception as e:
+                failures += 1
+                details.append({
+                    "isolate": isolate_name,
+                    "status": "error",
+                    "error": str(e),
+                })
+    
+    return {
+        "total_extracted": total_extracted,
+        "successes": successes,
+        "failures": failures,
+        "genomes_processed": len(batch_data),
+        "genes_requested": len(gene_list),
+        "output_files": all_output_files,
+        "details": details,
+    }
+
