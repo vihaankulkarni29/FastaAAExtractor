@@ -78,6 +78,76 @@ class TestCLI:
                 main()
             assert exc.value.code == 0
 
+    def test_dry_run_validation_ok(self, tmp_path):
+        """--dry-run should validate and exit 0 when inputs are good."""
+        genome = tmp_path / "test.fasta"
+        genome.write_text(">c1\nATGAAATTTCCCTAA\n")
+        coords = tmp_path / "test.tsv"
+        coords.write_text("Gene\tStart\tEnd\tStrand\nfoo\t1\t15\t+\n")
+
+        testargs = [
+            "prog",
+            "--genome",
+            str(genome),
+            "--coords",
+            str(coords),
+            "--isolate",
+            "X",
+            "--dry-run",
+        ]
+        with patch.object(sys, "argv", testargs):
+            result = main()
+            assert result == 0
+
+    def test_dry_run_validation_bad(self, tmp_path):
+        """--dry-run should report invalid when coordinates are bad."""
+        genome = tmp_path / "test.fasta"
+        genome.write_text(">c1\nATGAAATTTCCCTAA\n")
+        coords = tmp_path / "test.tsv"
+        # Start > End
+        coords.write_text("Gene\tStart\tEnd\tStrand\nfoo\t10\t5\t+\n")
+
+        testargs = [
+            "prog",
+            "--genome",
+            str(genome),
+            "--coords",
+            str(coords),
+            "--isolate",
+            "X",
+            "--dry-run",
+        ]
+        with patch.object(sys, "argv", testargs):
+            result = main()
+            assert result != 0
+
+    def test_batch_mode(self, tmp_path):
+        """Batch file with two jobs should return success if both succeed."""
+        # Shared minimal genome and coords for two isolates
+        genome = tmp_path / "test.fasta"
+        genome.write_text(">c1\nATGAAATTTCCCTAA\n")
+        coords = tmp_path / "test.tsv"
+        coords.write_text("Gene\tStart\tEnd\tStrand\nfoo\t1\t15\t+\n")
+
+        batch = tmp_path / "jobs.tsv"
+        batch.write_text(
+            "genome\tcoords\tisolate\n"
+            f"{genome}\t{coords}\tISO1\n"
+            f"{genome}\t{coords}\tISO2\n"
+        )
+
+        testargs = [
+            "prog",
+            "--batch",
+            str(batch),
+            "--output-dir",
+            str(tmp_path),
+            "--quiet",
+        ]
+        with patch.object(sys, "argv", testargs):
+            result = main()
+            assert result == 0
+
 
 class TestLogging:
     """Tests for logging setup."""
