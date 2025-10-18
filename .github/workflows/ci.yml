@@ -25,12 +25,33 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
-    - name: Run tests
+    - name: Lint (flake8)
       run: |
-        python src/fasta_aa_extractor.py --genome examples/ECS34.fasta --coords examples/ECS34.tsv --isolate ECS34
+        flake8 src tests
+
+    - name: Type check (mypy)
+      run: |
+        mypy src
+
+    - name: Run unit tests
+      run: |
+        pytest tests/ -v --cov=fasta_aa_extractor --cov-report=term --cov-report=xml
+
+    - name: Run integration test
+      run: |
+        python -m fasta_aa_extractor.cli --genome examples/ECS34.fasta --coords examples/ECS34.tsv --isolate ECS34
 
     - name: Check output
       run: |
         ls -la Extracted_Proteins.zip
         unzip -l Extracted_Proteins.zip | wc -l
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+      if: matrix.python-version == '3.11'

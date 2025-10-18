@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "isolate": "ECS34_Test",
+  "genome_file": "c:\\Users\\Vihaan\\Documents\\FastaAAExtractor\\examples\\ECS34.fasta",
+  "coords_file": "c:\\Users\\Vihaan\\Documents\\FastaAAExtractor\\examples\\ECS34.tsv",
+  "proteins_extracted": 6,
+  "output_zip": ".\\Extracted_Proteins.zip"
+}

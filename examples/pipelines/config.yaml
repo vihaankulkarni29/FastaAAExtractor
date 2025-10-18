@@ -1,0 +1,3 @@
+# Snakemake configuration file
+manifest: "samples.csv"
+outdir: "results"

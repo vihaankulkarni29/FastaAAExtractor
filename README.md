@@ -23,13 +23,19 @@
 ```bash
 git clone https://github.com/yourusername/FastaAAExtractor.git
 cd FastaAAExtractor
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Basic Usage
 
 ```bash
-python src/fasta_aa_extractor.py --genome examples/ECS34.fasta --coords examples/ECS34.tsv --isolate ECS34
+fasta-aa-extractor --genome examples/ECS34.fasta --coords examples/ECS34.tsv --isolate ECS34
+```
+
+Or run as module:
+
+```bash
+python -m fasta_aa_extractor.cli --genome examples/ECS34.fasta --coords examples/ECS34.tsv --isolate ECS34
 ```
 
 This extracts 43 multidrug efflux proteins from the example *E. coli* isolate.
