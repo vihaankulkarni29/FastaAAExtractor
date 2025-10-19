@@ -1,4 +1,0 @@
-gene,isolate,length_aa,start,end,strand,contig
-gfp,ECS34_TEST,238,1,714,+,contig_1
-acrA,ECS34_TEST,21,1,1011,+,contig_2
-tolC,ECS34_TEST,1,50,500,+,contig_1
