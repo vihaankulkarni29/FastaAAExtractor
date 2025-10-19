@@ -315,81 +315,69 @@ def save_json_result(args, zip_path, protein_count, status, error=None):
         json.dump(result, f, indent=2)
 
 
-def run_batch(args) -> int:
-    """Run batch mode from a CSV/TSV file with genome,coords,isolate columns."""
-    import pandas as pd
-    jobs_file = Path(args.batch)
-    if not jobs_file.exists():
-        logging.error(f"Batch file not found: {jobs_file}")
+def run_batch_folders(args) -> int:
+    """
+    User-friendly batch mode: user provides genome and coordinate folders, tool matches files by base name.
+    """
+    import os
+    from fasta_aa_extractor.core import run_batch_parallel_extraction
+    
+    genome_dir = Path(args.genome_dir)
+    coords_dir = Path(args.coords_dir)
+    if not genome_dir.exists() or not coords_dir.exists():
+        logging.error(f"Genome or coordinate folder not found.")
         return EXIT_FILE_NOT_FOUND
 
-    # Auto delimiter detection: try tab first then comma
-    try:
-        df = (
-            pd.read_csv(jobs_file, sep="\t")
-            if "\t" in jobs_file.read_text()
-            else pd.read_csv(jobs_file)
-        )
-    except Exception as e:
-        logging.error(f"Failed to read batch file: {e}")
+    # Find all .fasta/.fa files in genome_dir
+    genome_files = list(genome_dir.glob("*.fasta")) + list(genome_dir.glob("*.fa"))
+    if not genome_files:
+        logging.error(f"No genome FASTA files found in {genome_dir}")
+        return EXIT_FILE_NOT_FOUND
+
+    # Match each genome to a coordinate file by base name
+    batch_data = []
+    for genome_path in genome_files:
+        base = genome_path.stem
+        coord_path = coords_dir / f"{base}.tsv"
+        if not coord_path.exists():
+            logging.warning(f"No coordinate file for {genome_path.name}, skipping.")
+            continue
+        batch_data.append((str(genome_path), str(coord_path), base))
+
+    if not batch_data:
+        logging.error("No matching genome/coordinate pairs found.")
+        return EXIT_FILE_NOT_FOUND
+
+    gene_list = parse_gene_list(args.genes) if args.genes else []
+    if not gene_list:
+        logging.error("No genes specified for batch extraction.")
         return EXIT_INVALID_INPUT
 
-    required = {"genome", "coords", "isolate"}
-    missing = required - set(map(str.lower, df.columns))
-    if missing:
-        logging.error(f"Batch file missing columns: {', '.join(sorted(missing))}")
-        return EXIT_INVALID_INPUT
+    if not args.quiet:
+        print(f"Running batch extraction: {len(batch_data)} genomes × {len(gene_list)} genes")
+        print(f"Using {args.max_workers} workers")
 
-    # Check if parallel mode with gene list
-    if args.parallel and args.genes:
-        gene_list = parse_gene_list(args.genes)
-        if not gene_list:
-            logging.error("No genes specified for parallel batch extraction")
-            return EXIT_INVALID_INPUT
-            
-        if not args.quiet:
-            print(f"Running batch parallel extraction: {len(df)} genomes × {len(gene_list)} genes")
-            print(f"Using {args.max_workers} workers")
-        
-        # Prepare batch data
-        batch_data = []
-        for _, row in df.iterrows():
-            genome = row[[c for c in df.columns if c.lower() == "genome"][0]]
-            coords = row[[c for c in df.columns if c.lower() == "coords"][0]]
-            isolate = row[[c for c in df.columns if c.lower() == "isolate"][0]]
-            batch_data.append((str(genome), str(coords), str(isolate)))
-        
-        # Run parallel extraction
-        from fasta_aa_extractor.core import run_batch_parallel_extraction
-        
-        stats = run_batch_parallel_extraction(
-            batch_data=batch_data,
-            gene_list=gene_list,
-            output_dir=args.output_dir,
-            max_workers=args.max_workers,
-            show_progress=args.progress,
-        )
-        
-        # Report results
-        if not args.quiet:
-            print(f"\nBatch complete:")
-            print(f"  Genomes processed: {stats['genomes_processed']}")
-            print(f"  Successful: {stats['successes']}")
-            print(f"  Failed: {stats['failures']}")
-            print(f"  Total proteins extracted: {stats['total_extracted']}")
-            print(f"  Output files: {len(stats['output_files'])}")
-        
-        # Save JSON if requested
-        if args.json_output:
-            with open(args.json_output, "w") as f:
-                json.dump(stats, f, indent=2)
-        
-        return EXIT_SUCCESS if stats['failures'] == 0 else EXIT_GENERAL_ERROR
+    stats = run_batch_parallel_extraction(
+        batch_data=batch_data,
+        gene_list=gene_list,
+        output_dir=args.output_dir,
+        max_workers=args.max_workers,
+        show_progress=args.progress,
+    )
 
-    # Original sequential batch mode (for non-parallel or no gene list)
-    successes = 0
-    failures = 0
-    details = []
+    if not args.quiet:
+        print(f"\nBatch complete:")
+        print(f"  Genomes processed: {stats['genomes_processed']}")
+        print(f"  Successful: {stats['successes']}")
+        print(f"  Failed: {stats['failures']}")
+        print(f"  Total proteins extracted: {stats['total_extracted']}")
+        print(f"  Output files: {len(stats['output_files'])}")
+
+    if args.json_output:
+        with open(args.json_output, "w") as f:
+            json.dump(stats, f, indent=2)
+
+    return EXIT_SUCCESS if stats['failures'] == 0 else EXIT_GENERAL_ERROR
 
     for _, row in df.iterrows():
         genome = row[[c for c in df.columns if c.lower() == "genome"][0]]
