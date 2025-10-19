@@ -120,6 +120,15 @@ def main():
         "--genes",
         help="Filter to a list of genes (comma-separated) or @path/to/file with one gene per line",
     )
+    # New folder-based batch mode
+    parser.add_argument(
+        "--genome-dir",
+        help="Folder containing genome FASTA files (.fasta/.fa) for batch mode",
+    )
+    parser.add_argument(
+        "--coords-dir",
+        help="Folder containing coordinate TSV files for batch mode (filenames must match genomes)",
+    )
     parser.add_argument(
         "--batch",
         help="Process multiple jobs from a CSV/TSV with columns: genome,coords,isolate",
@@ -146,7 +155,11 @@ def main():
         setup_logging(args.verbose, args.quiet, args.log_file)
 
     try:
-        # Batch mode
+        # Folder-based batch mode (most user-friendly)
+        if args.genome_dir and args.coords_dir:
+            return run_batch_folders(args)
+
+        # Legacy batch mode via CSV/TSV file
         if args.batch:
             return run_batch(args)
 
@@ -379,14 +392,102 @@ def run_batch_folders(args) -> int:
 
     return EXIT_SUCCESS if stats['failures'] == 0 else EXIT_GENERAL_ERROR
 
-    for _, row in df.iterrows():
-        genome = row[[c for c in df.columns if c.lower() == "genome"][0]]
-        coords = row[[c for c in df.columns if c.lower() == "coords"][0]]
-        isolate = row[[c for c in df.columns if c.lower() == "isolate"][0]]
 
+def run_batch(args) -> int:
+    """Legacy batch mode: read CSV/TSV with genome,coords,isolate columns.
+
+    - If --genes provided: run fast parallel extraction (genome-centric outputs)
+    - If no --genes: preserve original behavior (sequential per-job run_extraction)
+    """
+    import pandas as pd
+    from fasta_aa_extractor.core import run_batch_parallel_extraction
+
+    jobs_file = Path(args.batch)
+    if not jobs_file.exists():
+        logging.error(f"Batch file not found: {jobs_file}")
+        return EXIT_FILE_NOT_FOUND
+
+    # Auto delimiter detection: try tab first then comma
+    try:
+        text = jobs_file.read_text(encoding="utf-8", errors="ignore")
+        df = pd.read_csv(jobs_file, sep="\t" if "\t" in text else ",")
+    except Exception as e:
+        logging.error(f"Failed to read batch file: {e}")
+        return EXIT_INVALID_INPUT
+
+    required = {"genome", "coords", "isolate"}
+    missing = required - set(map(str.lower, df.columns))
+    if missing:
+        logging.error(f"Batch file missing columns: {', '.join(sorted(missing))}")
+        return EXIT_INVALID_INPUT
+
+    # Normalize column name access (case-insensitive)
+    def col(name: str) -> str:
+        for c in df.columns:
+            if c.lower() == name:
+                return c
+        return name
+
+    # Build batch data
+    batch_data = []
+    for _, row in df.iterrows():
+        genome = str(row[col("genome")])
+        coords = str(row[col("coords")])
+        isolate = str(row[col("isolate")])
+        batch_data.append((genome, coords, isolate))
+
+    if not batch_data:
+        logging.error("No jobs found in batch file.")
+        return EXIT_INVALID_INPUT
+
+    # If genes are provided, use the new parallel mode (genome-centric outputs)
+    if args.genes:
+        gene_list = parse_gene_list(args.genes)
+        if not gene_list:
+            logging.error("No genes specified for batch extraction.")
+            return EXIT_INVALID_INPUT
+
+        if not args.quiet:
+            print(f"Running batch extraction: {len(batch_data)} genomes × {len(gene_list)} genes")
+            print(f"Using {args.max_workers} workers")
+
+        stats = run_batch_parallel_extraction(
+            batch_data=batch_data,
+            gene_list=gene_list,
+            output_dir=args.output_dir,
+            max_workers=args.max_workers,
+            show_progress=args.progress,
+        )
+
+        if not args.quiet:
+            print(f"\nBatch complete:")
+            print(f"  Genomes processed: {stats['genomes_processed']}")
+            print(f"  Successful: {stats['successes']}")
+            print(f"  Failed: {stats['failures']}")
+            print(f"  Total proteins extracted: {stats['total_extracted']}")
+            print(f"  Output files: {len(stats['output_files'])}")
+
+        if args.json_output:
+            with open(args.json_output, "w") as f:
+                json.dump(stats, f, indent=2)
+
+        return EXIT_SUCCESS if stats['failures'] == 0 else EXIT_GENERAL_ERROR
+
+    # Legacy behavior: sequentially process each job using run_extraction (ZIP outputs)
+    successes = 0
+    failures = 0
+    details = []
+    for genome, coords, isolate in batch_data:
         try:
             zip_path = run_extraction(
-                str(genome), str(coords), str(isolate), args.output_dir, args.progress
+                genome,
+                coords,
+                isolate,
+                args.output_dir,
+                args.progress,
+                combined_fasta=args.combined_fasta,
+                summary_csv=args.summary_csv,
+                gene_filter=None,
             )
             with zipfile.ZipFile(zip_path, "r") as zf:
                 protein_count = len(zf.namelist())
@@ -417,7 +518,6 @@ def run_batch_folders(args) -> int:
         print(f"Batch complete: {successes} success, {failures} failed")
 
     return EXIT_SUCCESS if failures == 0 else EXIT_GENERAL_ERROR
-
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -609,25 +609,40 @@ def extract_genes_from_single_genome(
                 start = int(row[actual_cols["start"]])
                 end = int(row[actual_cols["end"]])
                 strand = str(row[actual_cols["strand"]])
-                
+
                 if contig not in genome_idx:
                     continue
-                    
+
                 seq_record = genome_idx[contig]
                 if seq_record is None or not hasattr(seq_record, "seq"):
                     continue
-                
-                # Extract sequence (1-indexed to 0-indexed)
-                if strand == "+":
-                    protein_seq = seq_record.seq[start - 1 : end]
-                else:
-                    protein_seq = seq_record.seq[start - 1 : end].reverse_complement()
-                    
-                # Create record
+
+                # Extract DNA sequence (1-indexed to 0-indexed)
+                dna_seq = seq_record.seq[start - 1 : end]
+                if strand == "-":
+                    dna_seq = dna_seq.reverse_complement()
+
+                # Trim partial codon if necessary to avoid Biopython warnings
+                if len(dna_seq) % 3 != 0:
+                    trimmed_len = len(dna_seq) - (len(dna_seq) % 3)
+                    dna_seq = dna_seq[:trimmed_len]
+
+                # Translate to amino acid sequence using bacterial code (11)
+                try:
+                    aa_seq = dna_seq.translate(table=11, to_stop=True)
+                except Exception:
+                    # Fallback to default translation if table not applicable
+                    aa_seq = dna_seq.translate(to_stop=True)
+
+                # Skip empty translations
+                if not aa_seq or len(aa_seq) == 0:
+                    continue
+
+                # Create protein record
                 record = SeqRecord(
-                    Seq(str(protein_seq)),
+                    aa_seq if isinstance(aa_seq, Seq) else Seq(str(aa_seq)),
                     id=f"{isolate_name}_{gene_name}",
-                    description=f"{contig}:{start}-{end}({strand}) length={len(protein_seq)}aa",
+                    description=f"{contig}:{start}-{end}({strand}) length={len(aa_seq)}aa",
                 )
                 records.append(record)
             
