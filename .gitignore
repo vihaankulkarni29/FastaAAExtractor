@@ -195,3 +195,24 @@ Thumbs.db
 # Project specific
 Extracted_Proteins/
 *.zip
+
+# Data directories (genomes, coordinates, results)
+genomes/
+coords/
+results/
+results_*/
+extracted_proteins/
+input/
+output/
+
+# Batch job files
+failed_genomes.csv
+
+# Large FASTA files
+*.fasta
+*.fa
+*.faa
+*.tsv
+!examples/*.fasta
+!examples/*.fa
+!examples/*.tsv
