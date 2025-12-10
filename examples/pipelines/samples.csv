@@ -1,5 +1,0 @@
-# Sample manifest configuration
-# CSV format: isolate,genome,coords
-
-isolate,genome,coords
-ECS34,examples/ECS34.fasta,examples/ECS34.tsv

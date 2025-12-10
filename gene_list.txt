@@ -1,0 +1,1 @@
+emrA,emrB,emrK,OXA-1,CTX-M-15,AAC(3)-IIe

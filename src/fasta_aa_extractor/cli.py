@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Optional, List
@@ -520,4 +521,20 @@ def run_batch(args) -> int:
     return EXIT_SUCCESS if failures == 0 else EXIT_GENERAL_ERROR
 
 if __name__ == "__main__":
-    sys.exit(main())
+    _start = time.time()
+    _rc = main()
+    _elapsed = time.time() - _start
+    _hrs = int(_elapsed // 3600)
+    _mins = int((_elapsed % 3600) // 60)
+    _secs = int(_elapsed % 60)
+    # Print elapsed time to console (respecting quiet handled inside main)
+    try:
+        if _hrs:
+            print(f"Run completed in {_hrs}h {_mins}m {_secs}s")
+        elif _mins:
+            print(f"Run completed in {_mins}m {_secs}s")
+        else:
+            print(f"Run completed in {_secs}s")
+    except Exception:
+        pass
+    sys.exit(_rc)

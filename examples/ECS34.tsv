@@ -1,7 +1,0 @@
-Gene	Start	End	Strand	Sequence
-gfp	1	714	+	contig_1
-acrA	1	1011	+	contig_2
-acrB	1015	3015	-	contig_2
-tolC	50	500	+	contig_1
-mdfA	200	650	-	contig_1
-emrE	300	600	+	contig_2
